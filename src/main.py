@@ -9,7 +9,13 @@ from flask_cors import CORS
 from utils import APIException, generate_sitemap
 from admin import setup_admin
 from models import db, User, Planets, Characters, Vehicles, Fav_planet, Fav_character, Fav_vehicle
-#from models import Person
+
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required
+from flask_jwt_extended import JWTManager
+
+from flask_bcrypt import Bcrypt
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
@@ -19,6 +25,10 @@ MIGRATE = Migrate(app, db)
 db.init_app(app)
 CORS(app)
 setup_admin(app)
+
+app.config['JWT_SECRET_KEY'] = '4geeks_academy'
+jwt = JWTManager(app)
+bcrypt = Bcrypt(app)
 
 # Handle/serialize errors like a JSON object
 @app.errorhandler(APIException)
@@ -122,22 +132,13 @@ def handle_vehicles_id(vehicles_id):
     }
     return jsonify(response_body), 200
 
-@app.route('/user/favorites/characters/<int:user_id>', methods=['GET'])
-def handle_fav_characters(user_id):
-
-    fav_all_characters = Characters.query.join\
-    (Fav_character, Fav_character.character_id == Characters.id)\
-    .filter(Fav_character.user_id == user_id)
-
-    all_characters = list(map(lambda x: x.serialize(), fav_all_characters))
-
-    response_body = {
-        'results': all_characters
-    }
-    return jsonify(response_body), 200
-
 @app.route('/user/favorites/planets/<int:user_id>', methods=['GET'])
+@jwt_required()
 def handle_fav_planets(user_id):
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(id=user_id).first()
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
 
     fav_all_planets = Planets.query.join\
     (Fav_planet, Fav_planet.planet_id == Planets.id)\
@@ -150,8 +151,32 @@ def handle_fav_planets(user_id):
     }
     return jsonify(response_body), 200
 
+@app.route('/user/favorites/characters/<int:user_id>', methods=['GET'])
+@jwt_required()
+def handle_fav_characters(user_id):
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(id=user_id).first()
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
+
+    fav_all_characters = Characters.query.join\
+    (Fav_character, Fav_character.character_id == Characters.id)\
+    .filter(Fav_character.user_id == user_id)
+
+    all_characters = list(map(lambda x: x.serialize(), fav_all_characters))
+
+    response_body = {
+        'results': all_characters
+    }
+    return jsonify(response_body), 200
+
 @app.route('/user/favorites/vehicles/<int:user_id>', methods=['GET'])
+@jwt_required()
 def handle_fav_vehicles(user_id):
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(id=user_id).first()
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
 
     fav_all_vehicles = Vehicles.query.join\
     (Fav_vehicle, Fav_vehicle.vehicle_id == Vehicles.id)\
@@ -169,8 +194,8 @@ def create_user():
     body = request.get_json()
 
     if body is None:
-        raise APIException\
-        ('You need to specify the request body as a json object', status_code=400)
+        raise APIException('You need to specify the request body as a json object',\
+                                                                    status_code=400)
     if 'name' not in body:
         raise APIException('Name field can not be empty', status_code=400)
     if 'email' not in body:
@@ -178,8 +203,14 @@ def create_user():
     if 'password' not in body:
         raise APIException('Password field can not be empty', status_code=400)
 
-    new_user = User(name = body['name'], email = body['email'], \
-                    is_active = body['is_active'], password = body['password'])
+    user_email = User.query.filter_by(email= body['email']).first()
+    if user_email != None:
+        raise APIException('Email not available', status_code=400)
+
+    pw_hash = bcrypt.generate_password_hash(body['password'])
+
+    new_user = User(name = body['name'], email = body['email'],\
+                    password = pw_hash, is_active = True)
     db.session.add(new_user)
     db.session.commit()
 
@@ -188,13 +219,35 @@ def create_user():
     }
     return jsonify(response_body), 200
 
+@app.route('/login', methods=['POST'])
+def login():
+    email = request.json.get("email", None)
+    password = request.json.get("password", None)
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        raise APIException('User does not exist', status_code=400)
+    if password is None:
+        raise APIException('Password required', status_code=400)
+    
+    is_correct = bcrypt.check_password_hash(user.password, password)
+    if not is_correct:
+        return jsonify({'msg': 'Bad email or password'}), 401
+
+    access_token = create_access_token(identity=email)
+    return jsonify(access_token=access_token)
+
 @app.route('/user/favorites/planets', methods=['POST'])
+@jwt_required()
 def post_fav_planet():
     body = request.get_json()
+    user = User.query.get(body['user_id'])
+    current_user = get_jwt_identity()
 
-    user_id = User.query.get(body['user_id'])
-    if user_id == None:
+    if user == None:
         raise APIException('User does not exist', status_code=400)
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
 
     fav_field = Fav_planet.query.filter_by\
     (planet_id = body['planet_id']).filter_by(user_id = body['user_id']).all()
@@ -215,12 +268,16 @@ def post_fav_planet():
     return jsonify(response_body), 200
 
 @app.route('/user/favorites/characters', methods=['POST'])
+@jwt_required()
 def post_fav_character():
-    body = request.get_json()
+    body = request.get_json() 
+    user = User.query.get(body['user_id'])
+    current_user = get_jwt_identity()
 
-    user_id = User.query.get(body['user_id'])
-    if user_id == None:
+    if user == None:
         raise APIException('User does not exist', status_code=400)
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
 
     fav_field = Fav_character.query.filter_by\
     (character_id = body['character_id']).filter_by(user_id = body['user_id']).all()
@@ -241,12 +298,16 @@ def post_fav_character():
     return jsonify(response_body), 200
 
 @app.route('/user/favorites/vehicles', methods=['POST'])
+@jwt_required()
 def post_fav_vehicle():
     body = request.get_json()
+    user = User.query.get(body['user_id'])
+    current_user = get_jwt_identity()
 
-    user_id = User.query.get(body['user_id'])
-    if user_id == None:
+    if user == None:
         raise APIException('User does not exist', status_code=400)
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
 
     fav_field = Fav_vehicle.query.filter_by\
     (vehicle_id = body['vehicle_id']).filter_by(user_id = body['user_id']).all()
@@ -266,25 +327,13 @@ def post_fav_vehicle():
     }
     return jsonify(response_body), 200
 
-@app.route('/user/favorites/vehicles/<int:fav_id>/<int:user_id>', methods=['DELETE'])
-def delete_fav_vehicles(fav_id, user_id):
-
-    fav_v = Fav_vehicle.query.get(fav_id)
-    if fav_v == None:
-        raise APIException('Favorite does not exist', status_code=400)
-    
-    if fav_v.user_id != user_id:
-        raise APIException('User do not have this favorite', status_code=400)
-    db.session.delete(fav_v)
-    db.session.commit()
-
-    response_body = {
-        'results': 'ok'
-    }
-    return jsonify(response_body), 200
-
 @app.route('/user/favorites/planets/<int:fav_id>/<int:user_id>', methods=['DELETE'])
+@jwt_required()
 def delete_fav_planets(fav_id, user_id):
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(id=user_id).first()
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
 
     fav_p = Fav_planet.query.get(fav_id)
     if fav_p == None:
@@ -301,7 +350,12 @@ def delete_fav_planets(fav_id, user_id):
     return jsonify(response_body), 200
 
 @app.route('/user/favorites/characters/<int:fav_id>/<int:user_id>', methods=['DELETE'])
+@jwt_required()
 def delete_fav_character(fav_id, user_id):
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(id=user_id).first()
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
 
     fav_c = Fav_character.query.get(fav_id)
     if fav_c == None:
@@ -310,6 +364,28 @@ def delete_fav_character(fav_id, user_id):
     if fav_c.user_id != user_id:
         raise APIException('User do not have this favorite', status_code=400)
     db.session.delete(fav_c)
+    db.session.commit()
+
+    response_body = {
+        'results': 'ok'
+    }
+    return jsonify(response_body), 200
+
+@app.route('/user/favorites/vehicles/<int:fav_id>/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+def delete_fav_vehicles(fav_id, user_id):
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(id=user_id).first()
+    if current_user != user.email:
+        raise APIException('Not access allowed!', status_code=401)
+
+    fav_v = Fav_vehicle.query.get(fav_id)
+    if fav_v == None:
+        raise APIException('Favorite does not exist', status_code=400)
+    
+    if fav_v.user_id != user_id:
+        raise APIException('User do not have this favorite', status_code=400)
+    db.session.delete(fav_v)
     db.session.commit()
 
     response_body = {

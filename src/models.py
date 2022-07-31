@@ -74,7 +74,7 @@ class Fav_character(db.Model):
     User = db.relationship('User', primaryjoin=user_id == User.id)
 
     def __repr__(self):
-        return '<Fav_character %r' % self.id
+        return '<Fav_character %r>' % self.id
 
     def serialize(self):
         return {
@@ -91,7 +91,7 @@ class Fav_planet(db.Model):
     User = db.relationship('User', primaryjoin=user_id == User.id)
 
     def __repr__(self):
-        return '<Fav_planet %r' % self.id
+        return '<Fav_planet %r>' % self.id
 
     def serialize(self):
         return {
@@ -108,7 +108,7 @@ class Fav_vehicle(db.Model):
     User = db.relationship('User', primaryjoin=user_id == User.id)
 
     def __repr__(self):
-        return '<Fav_vehicle %r' % self.id
+        return '<Fav_vehicle %r>' % self.id
 
     def serialize(self):
         return {

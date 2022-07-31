@@ -1,8 +1,8 @@
 """empty message
 
-Revision ID: a9032b20fafc
+Revision ID: 1446d1814569
 Revises: 
-Create Date: 2022-07-27 14:41:54.633001
+Create Date: 2022-07-31 21:52:35.363864
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'a9032b20fafc'
+revision = '1446d1814569'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -23,7 +23,6 @@ def upgrade():
     sa.Column('name', sa.String(length=20), nullable=False),
     sa.Column('mass', sa.Integer(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('name'),
     sa.UniqueConstraint('name')
     )
     op.create_table('planets',
@@ -31,7 +30,6 @@ def upgrade():
     sa.Column('name', sa.String(length=20), nullable=False),
     sa.Column('population', sa.Integer(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('name'),
     sa.UniqueConstraint('name')
     )
     op.create_table('user',
@@ -41,7 +39,6 @@ def upgrade():
     sa.Column('password', sa.String(length=80), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('email'),
     sa.UniqueConstraint('email')
     )
     op.create_table('vehicles',
@@ -49,7 +46,6 @@ def upgrade():
     sa.Column('name', sa.String(length=20), nullable=False),
     sa.Column('model', sa.String(length=20), nullable=False),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('name'),
     sa.UniqueConstraint('name')
     )
     op.create_table('fav_character',
